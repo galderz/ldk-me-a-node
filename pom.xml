@@ -9,11 +9,10 @@
     <version>1.0-SNAPSHOT</version>
 
     <properties>
-        <maven.compiler.source>15</maven.compiler.source>
-        <maven.compiler.target>15</maven.compiler.target>
-
+        <java.version>15</java.version>
         <maven-compiler-plugin.version>3.8.1</maven-compiler-plugin.version>
         <maven-surefire-plugin.version>2.22.2</maven-surefire-plugin.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <ldk-java.version>1.0-SNAPSHOT</ldk-java.version>
 
@@ -65,7 +64,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${maven-surefire-plugin.version}</version>
                 <configuration>
-                    <argLine>--enable-preview</argLine>
+                    <argLine>-Djava.library.path=/opt/ldk-garbagecollected --enable-preview</argLine>
                 </configuration>
             </plugin>
         </plugins>
