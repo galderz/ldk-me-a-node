@@ -10,7 +10,7 @@ ifeq ($(origin .RECIPEPREFIX), undefined)
 endif
 .RECIPEPREFIX = >
 
-mvn-cmd += LD_PRELOAD=/usr/lib64/clang/11/lib/libclang_rt.asan-x86_64.so
+#mvn-cmd += LD_PRELOAD=/usr/lib64/clang/11/lib/libclang_rt.asan-x86_64.so
 mvn-cmd += mvn
 
 sources := $(shell find src/ -type f -name '*.java')
