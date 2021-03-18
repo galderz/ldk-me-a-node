@@ -28,6 +28,7 @@ public class NodeTest
         assertThat(txBroadcaster, is(notNullValue()));
 
         // TODO check out what's the latest in java k/v file based persistence
+        //      e.g. https://www.baeldung.com/java-chronicle-map
         final Persist persister = Persist.new_impl(new Persist.PersistInterface()
         {
             @Override
