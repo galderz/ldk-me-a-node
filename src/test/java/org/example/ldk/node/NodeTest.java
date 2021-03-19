@@ -1,16 +1,23 @@
 package org.example.ldk.node;
 
 import org.junit.jupiter.api.Test;
+import org.ldk.enums.LDKNetwork;
 import org.ldk.structs.BroadcasterInterface;
 import org.ldk.structs.ChainMonitor;
+import org.ldk.structs.ChannelManager;
 import org.ldk.structs.ChannelMonitor;
 import org.ldk.structs.ChannelMonitorUpdate;
 import org.ldk.structs.FeeEstimator;
 import org.ldk.structs.Filter;
+import org.ldk.structs.KeysManager;
 import org.ldk.structs.Logger;
 import org.ldk.structs.OutPoint;
 import org.ldk.structs.Persist;
 import org.ldk.structs.Result_NoneChannelMonitorUpdateErrZ;
+import org.ldk.structs.UserConfig;
+
+import java.security.SecureRandom;
+import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
@@ -52,24 +59,38 @@ public class NodeTest
         });
         assertThat(persister, is(notNullValue()));
 
-        // TODO split out to build a light node (e.g. only interested in certain tx)
-        final Filter txFilter = Filter.new_impl(new Filter.FilterInterface()
-        {
-            @Override
-            public void register_tx(byte[] txid, byte[] script_pubkey)
-            {
-                // TODO <insert code for you to watch for this transaction on-chain>
-            }
-
-            @Override
-            public void register_output(OutPoint outpoint, byte[] script_pubkey)
-            {
-                // TODO: <insert code for you to watch for any transactions that spend this output on-chain>
-            }
-        });
-        assertThat(txFilter, is(notNullValue()));
-
-        final ChainMonitor chainMonitor = ChainMonitor.constructor_new(txFilter, txBroadcaster, logger, feeEstimator, persister);
+        final ChainMonitor chainMonitor = ChainMonitor.constructor_new(null, txBroadcaster, logger, feeEstimator, persister);
         assertThat(chainMonitor, is(notNullValue()));
+
+        // <insert code to fill key_seed with random bytes OR if restarting, reload the
+        // seed from disk>
+        byte[] key_seed = SecureRandom.getSeed(32); // Use secure random to get a decent seed
+
+        // Notes about this `KeysManager`:
+        // * the current time is part of the parameters because it is used to derive
+        //   random numbers from the seed where required, to ensure all random
+        //   generation is unique across restarts.
+        final long now = System.currentTimeMillis();
+        final KeysManager keysManager = KeysManager.constructor_new(key_seed, TimeUnit.MILLISECONDS.toSeconds(now), (int) TimeUnit.MILLISECONDS.toNanos(now));
+        assertThat(keysManager, is(notNullValue()));
+
+        int block_height = 675_000; // <insert current chain tip height>;
+        final ChannelManager channelManager = ChannelManager.constructor_new(
+            feeEstimator
+            , chainMonitor.as_Watch()
+            , txBroadcaster
+            , logger
+            , keysManager.as_KeysInterface()
+            , UserConfig.constructor_default()
+            , LDKNetwork.LDKNetwork_Bitcoin
+            , new byte[32] // params_latest_hash_arg ??
+            , block_height
+        );
+        assertThat(channelManager, is(notNullValue()));
     }
+
+    // TODO split out to build a light node (e.g. only interested in certain tx)
+
+    // TODO test start a node that is not fresh (i.e. is restarted)
+    //      https://lightningdevkit.org/docs/build_node#read-channelmonitor-state-from-disk
 }
