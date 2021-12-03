@@ -10,8 +10,10 @@ ifeq ($(origin .RECIPEPREFIX), undefined)
 endif
 .RECIPEPREFIX = >
 
-#mvn-cmd += LD_PRELOAD=/usr/lib64/clang/11/lib/libclang_rt.asan-x86_64.so
-mvn-cmd += mvn
+mvn += LD_PRELOAD=/usr/lib64/clang/13/lib/libclang_rt.asan-x86_64.so
+mvn += ASAN_OPTIONS=detect_leaks=0
+mvn += JAVA_HOME=/opt/java-11
+mvn += /opt/maven/bin/mvn
 
 sources := $(shell find src/ -type f -name '*.java')
 sources += $(shell find . -type f -name '*.xml')
@@ -19,7 +21,7 @@ sources += $(shell find . -type f -name '*.xml')
 all: test
 
 test: $(sources)
-> $(mvn-cmd) test
+> $(mvn) test
 
 clean:
 > mvn clean
@@ -42,8 +44,6 @@ LDK_BIND_C_HOME := /opt/ldk-c-bindings
 RUST_LN_HOME := /opt/matt-rust-lightning
 
 ldk_jni_so = $(LDK_GC_HOME)/liblightningjni.so
-mvn += JAVA_HOME=/opt/java-11
-mvn += /opt/maven/bin/mvn
 
 $(LDK_GC_HOME):
 > cd /opt
@@ -65,7 +65,7 @@ build-bindings: build-ldk-bind-c build-ldk-bind-gc
 
 build-ldk-bind-gc:
 > cd $(LDK_BIND_GC_HOME)
-> ./genbindings.sh $(LDK_BIND_C_HOME) "-I/opt/java-11/include/ -I/opt/java-11/include/linux/" true false
+> ./genbindings.sh $(LDK_BIND_C_HOME) "-I/opt/java-11/include/ -I/opt/java-11/include/linux/" true false || true
 > $(mvn) -DskipTests install
 .PHONY: build-ldk-bind-gc
 
@@ -82,13 +82,13 @@ update-rust-ln: $(RUST_LN_HOME)
 
 update-ldk-bind-c: $(LDK_BIND_C_HOME)
 > cd $(LDK_BIND_C_HOME)
-> git fetch --all --tags
+> git fetch --all --tags -f
 > git checkout v0.0.103.1
 .PHONY: update-ldk-bind-c
 
 update-ldk-bind-gc: $(LDK_BIND_GC_HOME)
 > cd $(LDK_BIND_GC_HOME)
-> git fetch --all --tags
+> git fetch --all --tags -f
 > git checkout v0.0.103.1
 .PHONY: update-ldk-bind-gc
 

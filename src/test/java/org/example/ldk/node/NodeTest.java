@@ -1,8 +1,10 @@
 package org.example.ldk.node;
 
 import org.junit.jupiter.api.Test;
+import org.ldk.batteries.ChannelManagerConstructor;
 import org.ldk.batteries.NioPeerHandler;
-import org.ldk.enums.LDKNetwork;
+import org.ldk.enums.ConfirmationTarget;
+import org.ldk.enums.Network;
 import org.ldk.structs.BroadcasterInterface;
 import org.ldk.structs.ChainMonitor;
 import org.ldk.structs.ChannelManager;
@@ -10,67 +12,46 @@ import org.ldk.structs.ChannelMonitor;
 import org.ldk.structs.ChannelMonitorUpdate;
 import org.ldk.structs.Event;
 import org.ldk.structs.FeeEstimator;
-import org.ldk.structs.Filter;
 import org.ldk.structs.KeysManager;
 import org.ldk.structs.Logger;
-import org.ldk.structs.NetGraphMsgHandler;
+import org.ldk.structs.MonitorUpdateId;
+import org.ldk.structs.Option_FilterZ;
 import org.ldk.structs.OutPoint;
-import org.ldk.structs.PeerManager;
 import org.ldk.structs.Persist;
+import org.ldk.structs.Record;
 import org.ldk.structs.Result_NoneChannelMonitorUpdateErrZ;
 import org.ldk.structs.UserConfig;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.security.SecureRandom;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.*;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.notNullValue;
 
 public class NodeTest
 {
     @Test
-    void buildANode()
+    void buildANode() throws IOException
     {
-        final FeeEstimator feeEstimator = FeeEstimator.new_impl(confirmation_target -> 253);
+        final FeeEstimator feeEstimator = FeeEstimator.new_impl(new YourFeeEstimator());
         assertThat(feeEstimator, is(notNullValue()));
 
-        final Logger logger = Logger.new_impl(System.out::println);
+        final Logger logger = Logger.new_impl(new YourLogger());
         assertThat(logger, is(notNullValue()));
 
-        final BroadcasterInterface txBroadcaster = BroadcasterInterface.new_impl(tx ->
-        {});
+        final BroadcasterInterface txBroadcaster = BroadcasterInterface.new_impl(new YourBroadcaster());
         assertThat(txBroadcaster, is(notNullValue()));
 
-        final Persist persister = Persist.new_impl(new Persist.PersistInterface()
-        {
-            // TODO For file based persistence, can use: https://www.baeldung.com/java-chronicle-map
-            // TODO For in-memory hash map (testing) what is the key? OutPoint does not implement equals/hashCode)
-
-            @Override
-            public Result_NoneChannelMonitorUpdateErrZ persist_new_channel(OutPoint id, ChannelMonitor data)
-            {
-                final byte[] channelMonitorBytes = data.write();
-                // TODO <insert code to write these bytes to disk, keyed by `id`>
-                return null;
-            }
-
-            @Override
-            public Result_NoneChannelMonitorUpdateErrZ update_persisted_channel(OutPoint id, ChannelMonitorUpdate update, ChannelMonitor data)
-            {
-                final byte[] channelMonitorBytes = data.write();
-                // TODO <insert code to update the `ChannelMonitor`'s file on disk with these new bytes, keyed by `id`>
-                return null;
-            }
-        });
+        final Persist persister = Persist.new_impl(new YourPersist());
         assertThat(persister, is(notNullValue()));
 
-        final ChainMonitor chainMonitor = ChainMonitor.constructor_new(null, txBroadcaster, logger, feeEstimator, persister);
+        ChannelManagerConstructor.EventHandler channel_manager_persister = new YourChannelManagerEventHandler();
+
+        final Option_FilterZ filter = Option_FilterZ.none();// leave this as `null` or insert the Filter object, depending on// what you did for Step 7
+        final ChainMonitor chainMonitor = ChainMonitor.of(filter, txBroadcaster, logger, feeEstimator, persister);
         assertThat(chainMonitor, is(notNullValue()));
 
         // <insert code to fill key_seed with random bytes OR if restarting, reload the
@@ -82,104 +63,132 @@ public class NodeTest
         //   random numbers from the seed where required, to ensure all random
         //   generation is unique across restarts.
         final long now = System.currentTimeMillis();
-        final KeysManager keysManager = KeysManager.constructor_new(key_seed, TimeUnit.MILLISECONDS.toSeconds(now), (int) TimeUnit.MILLISECONDS.toNanos(now));
+        final KeysManager keysManager = KeysManager.of(key_seed, TimeUnit.MILLISECONDS.toSeconds(now), (int) TimeUnit.MILLISECONDS.toNanos(now));
         assertThat(keysManager, is(notNullValue()));
 
         int block_height = 675_000; // <insert current chain tip height>;
-        final ChannelManager channelManager = ChannelManager.constructor_new(
-            feeEstimator
-            , chainMonitor.as_Watch()
+        byte[] best_block_hash = new byte[32]; // <insert current chain tip block hash>;
+        ChannelManagerConstructor channel_manager_constructor = new ChannelManagerConstructor(
+            Network.LDKNetwork_Bitcoin
+            , UserConfig.with_default()
+            , best_block_hash
+            , block_height
+            , keysManager.as_KeysInterface()
+            , feeEstimator
+            , chainMonitor
+            , null // network graph
             , txBroadcaster
             , logger
-            , keysManager.as_KeysInterface()
-            , UserConfig.constructor_default()
-            , LDKNetwork.LDKNetwork_Bitcoin
-            , new byte[32] // params_latest_hash_arg ??
-            , block_height
         );
+
+        final ChannelManager channelManager = channel_manager_constructor.channel_manager;
         assertThat(channelManager, is(notNullValue()));
 
-        NetGraphMsgHandler router = NetGraphMsgHandler.constructor_new(new byte[32], null, logger);
-
-        byte[] random_bytes = new byte[32];
-        // <insert code to fill in `random_data` with random bytes>
-
-        PeerManager peerManager = PeerManager.constructor_new(
-            channelManager.as_ChannelMessageHandler()
-            , router.as_RoutingMessageHandler()
-            , keysManager.as_KeysInterface().get_node_secret()
-            , random_bytes
-            , logger
-        );
-        assertThat(peerManager, is(notNullValue()));
-
-        NioPeerHandler nioPeerhandler;
-        try
-        {
-            nioPeerhandler = new NioPeerHandler(peerManager);
-        }
-        catch (IOException e)
-        {
-            throw new UncheckedIOException(e);
-        }
-        assertThat(nioPeerhandler, is(notNullValue()));
-
-        // Start `NioPeerHandler` listening for connections.
-        int port = 9735;
-        try
-        {
-            nioPeerhandler.bind_listener(new InetSocketAddress("0.0.0.0", port));
-        }
-        catch (IOException e)
-        {
-            throw new UncheckedIOException(e);
-        }
-
-        // header is a []byte type, height is `int`, txdata is a
-        // TwoTuple<Long, byte[]>[], where the 0th element is the transaction's position
-        // in the block (with the coinbase transaction considered position 0) and the 1st
-        // element is the transaction bytes
-//        channel_manager.block_connected(header, txn, height);
-//        chain_monitor.block_connected(header, txn, height);
-//        channel_manager.block_disconnected(header);
-//        chain_monitor.block_disconnected(header, height);
-
-        // Handle LDK Events#
-        // On startup, start this loop:
-//        while(true) {
-//            Event[] channel_manager_events =
-//                channelManager.as_EventsProvider().get_and_clear_pending_events();
-//            Event[] chain_monitor_events =
-//                chainMonitor.as_EventsProvider().get_and_clear_pending_events();
-//
-//            List<Event> all_events = new ArrayList<>();
-//            all_events.addAll(Arrays.asList(channel_manager_events));
-//            all_events.addAll(Arrays.asList(chain_monitor_events));
-//            for (Event e: all_events) {
-//                // <insert code to handle each event>
-//            }
-//        }
-
-        // Persist ChannelManager#
-//        while (true) {
-//            // <code from the previous step that handles `ChannelManager` and
-//            // `ChainMonitor` events>
-//
-//            // After the `for` loop in the previous step has handled `all_events`:
-//            byte[] channel_manager_bytes_to_write = channel_manager.write();
-//            // <insert code that writes these bytes to disk and/or backups>
-//        }
-
-        // Background Processing#
-//        while (true) {
-//            // <wait 60 seconds>
-//            channel_manager.timer_chan_freshness_every_min();
-//            // Note: NioPeerHandler handles calling timer_tick_occurred
-//        }
+        final NioPeerHandler nio_peer_handler = channel_manager_constructor.nio_peer_handler;
+        assertThat(nio_peer_handler, is(notNullValue()));
+        final int port = 9735;
+        nio_peer_handler.bind_listener(new InetSocketAddress("0.0.0.0", port));
     }
 
     // TODO split out to build a light node (e.g. only interested in certain tx)
 
     // TODO test start a node that is not fresh (i.e. is restarted)
     //      https://lightningdevkit.org/docs/build_node#read-channelmonitor-state-from-disk
+
+    static final class YourFeeEstimator implements FeeEstimator.FeeEstimatorInterface
+    {
+        @Override
+        public int get_est_sat_per_1000_weight(ConfirmationTarget conf_target)
+        {
+            switch (conf_target)
+            {
+                case LDKConfirmationTarget_Background:
+                    // <insert code to retrieve a background feerate>
+                    return 100;
+                case LDKConfirmationTarget_Normal:
+                    // <insert code to retrieve a normal (i.e. within ~6 blocks) feerate>
+                    return 200;
+                case LDKConfirmationTarget_HighPriority:
+                    // <insert code to retrieve a high-priority feerate>
+                    return 300;
+                default:
+                    throw new IllegalStateException("Unexpected value: " + conf_target);
+            }
+        }
+    }
+
+    static final class YourLogger implements Logger.LoggerInterface
+    {
+        @Override
+        public void log(Record record)
+        {
+            System.out.println(record);
+        }
+    }
+
+    static final class YourBroadcaster implements BroadcasterInterface.BroadcasterInterfaceInterface
+    {
+        @Override
+        public void broadcast_transaction(byte[] tx)
+        {
+            // <insert code to broadcast the given transaction here>
+        }
+    }
+
+    static final class YourPersist implements Persist.PersistInterface
+    {
+        // TODO For file based persistence, can use: https://www.baeldung.com/java-chronicle-map
+        // TODO For in-memory hash map (testing) what is the key? OutPoint does not implement equals/hashCode)
+
+        @Override
+        public Result_NoneChannelMonitorUpdateErrZ persist_new_channel(OutPoint channel_id, ChannelMonitor data, MonitorUpdateId update_id)
+        {
+            final byte[] channelMonitorBytes = data.write();
+            // TODO <insert code to write these bytes to disk, keyed by `id`>
+            return null;
+        }
+
+        @Override
+        public Result_NoneChannelMonitorUpdateErrZ update_persisted_channel(OutPoint channel_id, ChannelMonitorUpdate update, ChannelMonitor data, MonitorUpdateId update_id)
+        {
+            final byte[] channelMonitorBytes = data.write();
+            // TODO <insert code to update the `ChannelMonitor`'s file on disk with these new bytes, keyed by `id`>
+            return null;
+        }
+    }
+
+    class YourChannelManagerEventHandler implements ChannelManagerConstructor.EventHandler {
+        @Override
+        public void handle_event(Event e) {
+            if (e instanceof Event.FundingGenerationReady) {
+                // <insert code to handle this event>
+            }
+            else if (e instanceof Event.PaymentReceived) {
+                // <insert code to handle this event>
+            }
+            else if (e instanceof Event.PaymentSent) {
+                // <insert code to handle this event>
+            }
+            else if (e instanceof Event.PaymentPathFailed) {
+                // <insert code to handle this event>
+            }
+            else if (e instanceof Event.PendingHTLCsForwardable) {
+                // <insert code to handle this event>
+            }
+            else if (e instanceof Event.SpendableOutputs) {
+                // <insert code to handle this event>
+            }
+            else if (e instanceof Event.PaymentForwarded) {
+                // <insert code to handle this event>
+            }
+            else if (e instanceof Event.ChannelClosed) {
+                // <insert code to handle this event>
+            }
+        }
+
+        @Override
+        public void persist_manager(byte[] channel_manager_bytes) {
+            // <insert code to persist channel_manager_bytes to disk and/or backups>
+        }
+    }
 }
