@@ -106,3 +106,30 @@ reset:
 get-ldk-jars:
 > scp -r $(REMOTE):.m2/repository/org/lightningdevkit $(HOME)/.m2/repository/org
 .PHONY: get-ldk-jars
+
+# Building Bitcoin
+# Check dependencies:
+# https://github.com/bitcoin/bitcoin/blob/master/doc/build-unix.md#fedora
+
+BTC_HOME := /opt/bitcoin
+
+bitcoind = $(BTC_HOME)/src/bitcoind
+bitcoin_cli = $(BTC_HOME)/src/bitcoin-cli
+
+$(BTC_HOME):
+> cd /opt
+> git clone https://github.com/bitcoin/bitcoin
+
+$(bitcoind): $(BTC_HOME)
+> cd $<
+> ./autogen.sh
+> ./configure --with-incompatible-bdb --disable-wallet
+> make
+
+regtest:
+> $(bitcoind) -regtest -daemon
+.PHONY: regtest
+
+blocks:
+> $(bitcoin_cli) -regtest generatetoaddress 101 $(shell $(bitcoin_cli) -regtest getnewaddress)
+.PHONY: blocks
