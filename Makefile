@@ -102,3 +102,7 @@ reset:
 > git reset --hard HEAD
 > git clean -f -d
 .PHONY: reset
+
+get-ldk-jars:
+> scp -r $(REMOTE):.m2/repository/org/lightningdevkit $(HOME)/.m2/repository/org
+.PHONY: get-ldk-jars
